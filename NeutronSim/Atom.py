@@ -1,37 +1,50 @@
 from __future__ import annotations
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass,field
 from typing import Literal, Optional, Union
 from Desim.Core import SimModule
 from Desim.Core import Event
 
-from deps.Desim.Desim.Core import SimTime
+from NeutronSim.Config import MemoryConfig
+from Desim.Core import SimTime
+from Desim.memory.Memory import DepMemory
 
 
 class AtomInstance(SimModule):
     def __init__(self):
         super().__init__()
 
-        self.instance_id:int = 0 
+        self.instance_id:int = 0
+
+        self.atom_module = None
 
         self.link_request_queue:deque[AtomResourceRequest] = deque()
         self.compute_request_queue:deque[AtomResourceRequest] = deque()
 
         self.current_link_request:Optional[AtomResourceRequest] = None
-        self.current_compute_rquest:Optional[AtomResourceRequest] = None 
+        self.current_compute_request:Optional[AtomResourceRequest] = None
+
+
+        self.l2_memory_config:MemoryConfig = MemoryConfig()
+        self.l2_memory = DepMemory()
+
+
 
     def link_in_use(self)->bool:
         return self.current_link_request is not None
 
     def compute_in_use(self)->bool:
-        return self.current_compute_rquest is not None 
+        return self.current_compute_request is not None
+
+
+
 
 
 @dataclass 
 class AtomResourceRequest:
     resource_type:Optional[Literal['link','compute']] = None  # link 仅表示单向的输入带宽,输出 link 自动控制 
     access_type:Optional[Literal['acquire','release']] = None 
-    resources_id:list[int] = []
+    resources_id:list[int] = field(default_factory=list)
     requester_id:int = -1
     acquire_finish_event:Optional[Event] = None
 
@@ -67,7 +80,7 @@ class AtomManager(SimModule):
                     if release_req.resource_type == 'link':
                         self.atom_instance_dict[resource_id].current_link_request = None 
                     elif release_req.resource_type == 'compute':
-                        self.atom_instance_dict[resource_id].current_compute_rquest = None
+                        self.atom_instance_dict[resource_id].current_compute_request = None
 
             # 注册 acquire 请求 
             for acquire_req in self.pending_acquire_request_queue:
@@ -107,8 +120,8 @@ class AtomManager(SimModule):
                             atom_instance.current_link_request = atom_instance.link_request_queue.popleft()
 
                         elif waiting_req.resource_type == 'compute':
-                            assert atom_instance.current_compute_rquest is None 
-                            atom_instance.current_compute_rquest = atom_instance.compute_request_queue.popleft()
+                            assert atom_instance.current_compute_request is None
+                            atom_instance.current_compute_request = atom_instance.compute_request_queue.popleft()
 
                         # notify 
                         waiting_req.acquire_finish_event.notify(SimTime(0))
@@ -133,4 +146,5 @@ class AtomManager(SimModule):
         self.update_event.notify(SimTime(0))
 
 
-    
+    def get_atom_instance(self,atom_id:int) -> AtomInstance:
+        return self.atom_instance_dict[atom_id]
