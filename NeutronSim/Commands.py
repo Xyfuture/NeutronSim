@@ -1,11 +1,11 @@
 
 from dataclasses import dataclass, field
-from email.policy import default
+from typing import Literal
 
 
 @dataclass
 class SendCommand:
-    opcode:str
+    opcode:str = 'SEND'
     group_id:list[int] = field(default_factory=list)
     length:int = -1
     dst:int = -1
@@ -19,6 +19,62 @@ class ComputeCommand:
 
 
 @dataclass
-class ReceiveCommand:
-    pass 
+class ReceiveBaseCommand:
+    opcode:str
+
+
+
+@dataclass
+class ReceiveCommand(ReceiveBaseCommand):
+    opcode:Literal['RECEIVE_MONO','RECEIVE_BIN','RECEIVE_TRI'] = 'RECEIVE'
+    bdcst:list[int]  = field(default_factory=list)
+
+    size:int = -1 # 得转换到 多少次 处理上
+
+    dst0:int = -1
+    dst0_type:Literal['fp16','bf16','fp32'] = ''
+
+    dst1:int = -1
+    dst1_type:Literal['fp16','bf16','fp32'] = ''
+    dst1_flag:bool = False
+
+    src0:int = -1
+    src0_dtype:Literal['fp16','bf16','fp32'] = ''
+    free0:bool = False
+    src0_loc:Literal['l3','reduce'] = ''
+
+    src1:int = -1
+    src1_dtype:Literal['fp16','bf16','fp32'] = ''
+    free1:bool = False
+    src1_loc:Literal['l3','reduce'] = ''
+
+    redcount:int = 0
+
+    act:Literal[0,1,2,3,4,5,6] = 0
+    mul:bool  = False
+
+    add:bool = False
+    asrc:int = -1
+    adtype:Literal['fp16','bf16','fp32'] = ''
+    afree:bool = False
+
+@dataclass
+class QuantCommand(ReceiveBaseCommand):
+    opcode:str = 'QUANT'
+
+    bdcst:list[int] = field(default_factory=list)
+
+    size:int = -1
+
+    dstq:int = -1
+    dstzs:int = -1
+
+    src:int = -1
+    src_dtype:Literal['fp16','bf16','fp32'] = ''
+    free:bool = False
+
+    ngroup:Literal[0,1,2,3] = -1
+
+
+
 

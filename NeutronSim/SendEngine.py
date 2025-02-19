@@ -12,8 +12,13 @@ from Desim.module.FIFO import FIFO,DelayFIFO
 from Desim.module.Pipeline import PipeGraph
 
 
+@dataclass
+class SendEngineConfig:
+    num_sub_engine:int = 4
+
+
 class SubSendEngine(SimModule):
-    def __init__(self):
+    def __init__(self,sub_send_engine_id:int):
         super().__init__()
 
         self.register_coroutine(self.process)
@@ -27,11 +32,18 @@ class SubSendEngine(SimModule):
 
         self.link_config:LinkConfig = LinkConfig()
 
-        self.sub_send_engine_id = -1 
+        self.sub_send_engine_id = sub_send_engine_id
         
         self.current_command:Optional[SendCommand] = None 
 
         self.acquire_finish_event:Event = Event()
+
+    def config_connection(self):
+        """
+        用于构建各种连接关系
+        """
+
+        pass
 
 
     def l3_read_dma_handler(self,input_fifo_map:Optional[dict[str,FIFO]],output_fifo_map:Optional[dict[str,FIFO]])->bool:
@@ -166,9 +178,32 @@ class SendEngine(SimModule):
     def __init__(self):
         super().__init__()
 
-        self.send_command_queue:FIFO = FIFO(1000)
+        self.send_command_queue:Optional[FIFO] = None
 
-        self.send_engine_config = None
+        self.send_engine_config:SendEngineConfig = SendEngineConfig()
+
+        self.atom_manager:AtomManager = AtomManager()
+
+        # 构建所有的 send engine
+        self.sub_send_engine_list:list[SubSendEngine] = []
+        for i in range(self.send_engine_config.num_sub_engine):
+            self.sub_send_engine_list.append(
+                SubSendEngine(i)
+            )
+
+    def config_connection(self):
+        """
+        配置内外部各种的连接关系
+        :return:
+        """
+
+
+        pass
+
+
+    def load_command(self,command_list:list[SendCommand]):
+        command_size = len(command_list)
+        self.send_command_queue = FIFO(command_size,command_size,command_list)
 
 
 
