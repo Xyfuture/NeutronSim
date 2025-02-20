@@ -1,11 +1,16 @@
 from dataclasses import dataclass
-from typing import Optional, Literal
+from typing import Optional, Literal, TypeAlias
 
 from Desim.Core import SimModule, SimTime
 from Desim.module.FIFO import FIFO
 
 from NeutronSim.Commands import ReceiveCommand, ReceiveBaseCommand, QuantCommand
 from Desim.module.Pipeline import PipeGraph, PipeStage
+
+from Desim.memory.Memory import DepMemory, DepMemoryPort
+
+PipeArg:TypeAlias = Optional[dict[str,FIFO]]
+
 
 
 @dataclass
@@ -26,6 +31,10 @@ class ReceiveEngine(SimModule):
         self.current_command:Optional[ReceiveBaseCommand] = None
 
         self.register_coroutine(self.process)
+
+        self.l3_memory:Optional[DepMemory] = None
+        self.reduce_memory:Optional[DepMemory] = None
+
 
     def load_command(self,command_list:list[ReceiveBaseCommand]):
         command_size = len(command_list)
@@ -115,11 +124,60 @@ class ReceiveEngine(SimModule):
 
         return  10
 
+    def check_read_dma_in_use(self,read_dma_id:int)->bool:
+        if read_dma_id == 0:
+            return True
+        elif read_dma_id == 1:
+            if self.current_command.opcode in ['RECEIVE_BIN','RECEIVE_TRI']:
+                return True
+        elif read_dma_id == 2:
+            if self.current_command.opcode == 'RECEIVE_TRI':
+                return True
+        else:
+            raise ValueError
+        return False
 
-    def reduce_read_dma_helper(self):
-        for i in range(self.repeat_times):
-            # element 不会发生变化, 但是总的 bytes 可能会发生变化
-            pass
+    def check_write_dma_in_use(self,write_dma_id:int)->bool:
+        if write_dma_id == 0:
+            return True
+        elif write_dma_id == 1:
+            if isinstance(self.current_command, ReceiveCommand):
+                if self.current_command.dst1_flag:
+                    return True
+        else:
+            raise ValueError
+
+        return False
+
+
+
+    def reduce_read_dma_helper(self,read_dma_id:int ):
+        def reduce_read_dma_handler(input_fifo_map:PipeArg,output_fifo_map:PipeArg)->bool:
+            # 首先决定是否启用 这个 dma
+            if not self.check_read_dma_in_use(read_dma_id):
+                return False
+
+            # 构建 port 进行连接
+            reduce_read_port = DepMemoryPort()
+            reduce_read_port.config_dep_memory(self.reduce_memory)
+
+            if isinstance(self.current_command, ReceiveCommand):
+                src_map = {0:self.current_command.src0,1:self.current_command.src1,2:self.current_command.asrc}
+            elif isinstance(self.current_command,QuantCommand):
+                src_map = {0:self.current_command.src}
+            else:
+                raise ValueError
+
+            src = src_map[read_dma_id]
+
+            # 该 DMA 会被使用，根据指令确定读取次数，并发送到指定的下一个队列中
+            for i in range(self.repeat_times):
+                pass
+
+
+
+        return reduce_read_dma_handler
+
 
 
     def l3_read_dma_helper(self):
@@ -128,16 +186,16 @@ class ReceiveEngine(SimModule):
     def l3_write_dma_helper(self):
         pass
 
-    def act_handler(self,input_fifo_map:Optional[dict[str,FIFO]],output_fifo_map:Optional[dict[str,FIFO]])->bool:
+    def act_handler(self,input_fifo_map:PipeArg,output_fifo_map:PipeArg)->bool:
         pass
 
-    def mul_quant_handler(self,input_fifo_map:Optional[dict[str,FIFO]],output_fifo_map:Optional[dict[str,FIFO]])->bool:
+    def mul_quant_handler(self,input_fifo_map:PipeArg,output_fifo_map:PipeArg)->bool:
         pass
 
-    def add_handler(self,input_fifo_map:Optional[dict[str,FIFO]],output_fifo_map:Optional[dict[str,FIFO]])->bool:
+    def add_handler(self,input_fifo_map:PipeArg,output_fifo_map:PipeArg)->bool:
         pass
 
-    def fork_handler(self,input_fifo_map:Optional[dict[str,FIFO]],output_fifo_map:Optional[dict[str,FIFO]])->bool:
+    def fork_handler(self,input_fifo_map:PipeArg,output_fifo_map:PipeArg)->bool:
         pass
 
 
