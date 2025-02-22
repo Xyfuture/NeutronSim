@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Optional, Literal, TypeAlias
 
 from Desim.Core import SimModule, SimTime
@@ -64,27 +65,27 @@ class ReceiveEngine(SimModule):
                 # 还是构建一个固定的流水线吧, 通过调整里面的流水级的函数实现 各种操作
 
                 if self.current_command.src0_loc == 'l3':
-                    read_dma_0_stage = PipeStage(self.l3_read_dma_helper())
+                    read_dma_0_stage = PipeStage(self.l3_read_dma_helper(0))
                 elif self.current_command.src0_loc == 'reduce':
-                    read_dma_0_stage = PipeStage(self.reduce_read_dma_helper())
+                    read_dma_0_stage = PipeStage(self.reduce_read_dma_helper(0))
                 else:
                     assert False
 
                 if self.current_command.src1_loc == 'l3':
-                    read_dma_1_stage = PipeStage(self.l3_read_dma_helper())
+                    read_dma_1_stage = PipeStage(self.l3_read_dma_helper(1))
                 elif self.current_command.src1_loc == 'reduce':
-                    read_dma_1_stage = PipeStage(self.reduce_read_dma_helper())
+                    read_dma_1_stage = PipeStage(self.reduce_read_dma_helper(1))
                 else:
                     assert False
 
-                read_dma_a_stage = PipeStage(self.l3_read_dma_helper())
+                read_dma_a_stage = PipeStage(self.l3_read_dma_helper(2))
                 act_stage = PipeStage(self.act_handler)
                 mul_quant_stage = PipeStage(self.mul_quant_handler)
                 add_stage = PipeStage(self.add_handler)
                 fork_stage = PipeStage(self.fork_handler)
 
-                write_dma_0_stage = PipeStage(self.l3_write_dma_helper())
-                write_dma_1_stage = PipeStage(self.l3_write_dma_helper())
+                write_dma_0_stage = PipeStage(self.l3_write_dma_helper(0))
+                write_dma_1_stage = PipeStage(self.l3_write_dma_helper(1))
 
                 pipe_graph.add_stage(read_dma_0_stage,'read_dma_0_stage')
                 pipe_graph.add_stage(read_dma_1_stage,'read_dma_1_stage')
@@ -110,7 +111,24 @@ class ReceiveEngine(SimModule):
 
 
             elif isinstance(self.current_command, QuantCommand):
-                pass
+                read_dma_0_stage = PipeStage(self.l3_read_dma_helper(0))
+                mul_quant_stage = PipeStage(self.mul_quant_handler)
+                fork_stage = PipeStage(self.fork_handler)
+
+                write_dma_0_stage = PipeStage(self.l3_write_dma_helper(0))
+
+                pipe_graph.add_stage(read_dma_0_stage,'read_dma_0_stage')
+                pipe_graph.add_stage(mul_quant_stage,'mul_quant_stage')
+                pipe_graph.add_stage(fork_stage,'fork_stage')
+                pipe_graph.add_stage(write_dma_0_stage,'write_dma_0_stage')
+
+                pipe_graph.add_edge('read_dma_0_stage','mul_quant_stage','to_mul_quant_0',1)
+                pipe_graph.add_edge('mul_quant_stage','fork_stage','to_fork',1)
+                pipe_graph.add_edge('fork_stage','write_dma_0_stage','to_write_dma_0',1)
+
+                pipe_graph.build_graph()
+                pipe_graph.config_sink_stage_names(['write_dma_0_stage'])
+
 
             # 等待流水线执行完毕
             pipe_graph.wait_pipe_graph_finish()
@@ -119,18 +137,6 @@ class ReceiveEngine(SimModule):
             SimModule.wait_time(SimTime(1))
 
 
-    @property
-    def repeat_times(self):
-        # TODO implement this method
-        return 10
-
-    @property
-    def block_elements(self):
-        """
-        每次的单元中有多少个 element
-        """
-
-        return  10
 
     def check_read_dma_in_use(self,read_dma_id:int)->bool:
         if read_dma_id == 0:
@@ -287,8 +293,44 @@ class ReceiveEngine(SimModule):
 
         return l3_read_dma_handler
 
-    def l3_write_dma_helper(self):
-        pass
+    def l3_write_dma_helper(self,write_dma_id):
+
+        def l3_write_dma_handler(input_fifo_map:PipeArg,output_fifo_map:PipeArg)->bool:
+            if not self.check_write_dma_in_use(write_dma_id):
+                return False
+
+            l3_write_port = ChunkMemoryPort()
+            l3_write_port.config_chunk_memory(self.l3_memory)
+
+            input_fifo = input_fifo_map[f'to_write_dma_{write_dma_id}']
+
+            write_addr = 0
+
+            if isinstance(self.current_command, ReceiveCommand):
+                if write_dma_id == 0 :
+                    write_addr = self.current_command.dst0
+                elif write_dma_id == 1 :
+                    write_addr = self.current_command.dst1
+            elif isinstance(self.current_command, QuantCommand):
+                write_addr = self.current_command.dstq
+            else:
+                raise ValueError
+
+
+            for i in range(self.current_command.chunk_num):
+                chunk_packet:ChunkPacket = input_fifo.read()
+
+
+                l3_write_port.write(write_addr+i,
+                                    chunk_packet.payload,
+                                    True,
+                                    chunk_packet.num_elements,
+                                    chunk_packet.batch_size,
+                                    chunk_packet.element_bytes)
+
+
+            return False
+
 
 
 
