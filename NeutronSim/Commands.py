@@ -7,7 +7,13 @@ from typing import Literal
 class SendCommand:
     opcode:str = 'SEND'
     group_id:list[int] = field(default_factory=list)
-    length:int = -1
+
+    chunk_size:int = -1
+    batch_size:int = -1
+    chunk_num:int = -1
+
+    dtype:Literal['fp16','bf16','fp32'] = ''
+
     dst:int = -1
     src:int = -1
     free:bool = False
@@ -22,6 +28,9 @@ class ComputeCommand:
 class ReceiveBaseCommand:
     opcode:str
 
+    chunk_size:int = -1
+    batch_size:int = -1
+    chunk_num:int = -1
 
 
 @dataclass
@@ -29,7 +38,7 @@ class ReceiveCommand(ReceiveBaseCommand):
     opcode:Literal['RECEIVE_MONO','RECEIVE_BIN','RECEIVE_TRI'] = 'RECEIVE'
     bdcst:list[int]  = field(default_factory=list)
 
-    size:int = -1 # 得转换到 多少次 处理上
+    # Chunk的信息提到了Base中
 
     dst0:int = -1
     dst0_type:Literal['fp16','bf16','fp32'] = ''
@@ -64,7 +73,9 @@ class QuantCommand(ReceiveBaseCommand):
 
     bdcst:list[int] = field(default_factory=list)
 
-    size:int = -1
+
+
+
 
     dstq:int = -1
     dstzs:int = -1

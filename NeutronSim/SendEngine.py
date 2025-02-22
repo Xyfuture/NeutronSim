@@ -5,9 +5,9 @@ from Desim.module.Pipeline import PipeStage
 
 from NeutronSim.Atom import AtomManager,AtomResourceRequest
 from NeutronSim.Commands import SendCommand
-from NeutronSim.Config import MemoryConfig, LinkConfig
+from NeutronSim.Config import MemoryConfig, LinkConfig, element_bytes_dict
 from Desim.Core import Event, SimModule, SimTime
-from Desim.memory.Memory import DepMemory, DepMemoryPort
+from Desim.memory.Memory import DepMemory, DepMemoryPort, ChunkMemoryPort
 from Desim.module.FIFO import FIFO,DelayFIFO
 from Desim.module.Pipeline import PipeGraph
 
@@ -27,7 +27,7 @@ class SubSendEngine(SimModule):
         
         self.atom_manager:AtomManager = None
 
-        self.l3_memory_read_port:DepMemoryPort = DepMemoryPort()
+        self.l3_memory_read_port:ChunkMemoryPort = ChunkMemoryPort()
         self.l3_memory_config:MemoryConfig = MemoryConfig()
 
         self.link_config:LinkConfig = LinkConfig()
@@ -49,9 +49,11 @@ class SubSendEngine(SimModule):
     def l3_read_dma_handler(self,input_fifo_map:Optional[dict[str,FIFO]],output_fifo_map:Optional[dict[str,FIFO]])->bool:
         # 根据指令的情况进行 分段读取数据
         read_addr = self.current_command.src
-        for i in range(self.current_command.length):
+        for i in range(self.current_command.chunk_num):
             # 从 memory 中读取数据
-            data = self.l3_memory_read_port.read(read_addr,1,self.current_command.free)
+            data = self.l3_memory_read_port.read(read_addr+i,1,self.current_command.free,
+                                                 self.current_command.chunk_size,self.current_command.batch_size,
+                                                 element_bytes_dict[self.current_command.dtype])
 
             # 写入到 DelayFIFO 中, 模拟UCI-E 的延迟行为
             # 名字就叫uci-e吧
@@ -62,7 +64,6 @@ class SubSendEngine(SimModule):
                 output_fifo_map[f'l3-uci-e-{atom_id}'].delay_write(data,SimTime(self.link_config.link_latency))
 
 
-            read_addr += 1
 
         return False
 
@@ -72,8 +73,8 @@ class SubSendEngine(SimModule):
         input_fifo = list(input_fifo_map.values())[0]
         output_fifo = list(output_fifo_map.values())[0]
 
-        latency = self.l3_memory_config.block_size // self.link_config.bandwidth
-        for i in range(self.current_command.length):
+        latency = (self.current_command.chunk_size * self.current_command.batch_size * element_bytes_dict[self.current_command.dtype])// self.link_config.bandwidth
+        for i in range(self.current_command.chunk_num):
             data = input_fifo.read()
             SimModule.wait_time(SimTime(latency))
             output_fifo.write(data)
@@ -85,17 +86,18 @@ class SubSendEngine(SimModule):
     # 返回一个函数, 用于作为 l2 的 write dma
     def l2_write_dma_helper(self,atom_id:int):
         def l2_write_dma_handler(input_fifo_map:Optional[dict[str,FIFO]],output_fifo_map:Optional[dict[str,FIFO]]):
-            l2_write_port = DepMemoryPort()
-            l2_write_port.config_dep_memory(atom_instance.l2_memory)
+            l2_write_port = ChunkMemoryPort()
+            l2_write_port.config_chunk_memory(atom_instance.l2_memory)
 
             write_addr = self.current_command.dst
-            for i in range(self.current_command.length):
+            for i in range(self.current_command.chunk_num):
                 data = input_fifo_map[f'uci-e-{atom_id}-l2-{atom_id}'].read()
 
                 # 写入到 l2 memory 中
-                l2_write_port.write(write_addr,data,True)
-
-                write_addr += 1
+                l2_write_port.write(write_addr+i,data,True,
+                                    self.current_command.chunk_size,
+                                    self.current_command.batch_size,
+                                    element_bytes_dict[self.current_command.dtype])
 
             return False
 
@@ -204,6 +206,7 @@ class SendEngine(SimModule):
     def load_command(self,command_list:list[SendCommand]):
         command_size = len(command_list)
         self.send_command_queue = FIFO(command_size,command_size,command_list)
+
 
 
 
