@@ -28,7 +28,6 @@ class SubSendEngine(SimModule):
         self.atom_manager:AtomManager = None
 
         self.l3_memory_read_port:ChunkMemoryPort = ChunkMemoryPort()
-        self.l3_memory_config:MemoryConfig = MemoryConfig()
 
         self.link_config:LinkConfig = LinkConfig()
 

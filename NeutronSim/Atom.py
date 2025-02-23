@@ -5,9 +5,16 @@ from typing import Literal, Optional, Union
 from Desim.Core import SimModule
 from Desim.Core import Event
 
+from NeutronSim.Commands import ComputeCommand
 from NeutronSim.Config import MemoryConfig
 from Desim.Core import SimTime
 from Desim.memory.Memory import DepMemory
+
+from Desim.memory.Memory import ChunkMemory
+
+from Desim.module.FIFO import FIFO
+
+from deps.Desim.Desim.Sync import SimSemaphore
 
 
 class AtomInstance(SimModule):
@@ -148,3 +155,82 @@ class AtomManager(SimModule):
 
     def get_atom_instance(self,atom_id:int) -> AtomInstance:
         return self.atom_instance_dict[atom_id]
+
+
+
+class AtomModule(SimModule):
+    def __init__(self,atom_id:int=-1):
+        super().__init__()
+
+        self.atom_id = atom_id
+        
+        self.l2_memory = ChunkMemory()
+        
+
+        # 假设指令一开始就能直接发送到 ATOM Die 中缓存执行
+        self.compute_command_queue:Optional[FIFO] = None
+
+
+        # 内部使用
+        self.compute_start_semaphore = SimSemaphore(0)
+        self.compute_finish_semaphore = SimSemaphore(0)
+        self.store_start_semaphore = SimSemaphore(0)
+        self.store_finish_semaphore = SimSemaphore(0)
+
+        self.current_command:Optional[ComputeCommand] = None 
+
+        self.register_coroutine(self.processs)
+        self.register_coroutine(self.compute_handler)
+        self.register_coroutine(self.store_handler)
+    
+    def processs(self):
+        while True:
+            if self.compute_command_queue.is_empty():
+                return
+
+            # 取一条指令
+            self.current_command = self.compute_command_queue.read()
+            
+            # 驱动 compute 和 store 操作
+            self.compute_start_semaphore.post()
+            self.store_start_semaphore.post()
+
+            # 等待上述两个子操作结束
+            self.compute_finish_semaphore.wait()
+            self.store_finish_semaphore.wait()
+
+            # 执行完毕 
+            SimModule.wait_time(SimTime(1))
+
+
+    def compute_handler(self):
+        while True:
+            self.compute_start_semaphore.wait()
+
+            # 获取到指令, 开始执行 
+            
+
+            # 执行完毕
+            self.compute_finish_semaphore.post()
+
+
+    def store_handler(self):
+        while True:
+            self.store_start_semaphore.wait()
+
+
+            # 执行完毕 
+            self.store_finish_semaphore.post()
+
+
+    def l2_read_dma_helper(self):
+        pass
+
+    def l2_write_dma_helper(self):
+        pass
+
+    def link_handler(self):
+        pass 
+
+    def reduce_write_dma_helper(self):
+        pass
