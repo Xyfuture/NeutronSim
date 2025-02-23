@@ -26,14 +26,15 @@ class AtomInstance(SimModule):
         self.atom_module = None
 
         self.link_request_queue:deque[AtomResourceRequest] = deque()
+
+        # compute的资源暂时没有启用
         self.compute_request_queue:deque[AtomResourceRequest] = deque()
 
         self.current_link_request:Optional[AtomResourceRequest] = None
+
+        # 暂时没有启用
         self.current_compute_request:Optional[AtomResourceRequest] = None
 
-
-        self.l2_memory_config:MemoryConfig = MemoryConfig()
-        self.l2_memory = DepMemory()
 
 
 
@@ -106,12 +107,12 @@ class AtomManager(SimModule):
                     atom_instance = self.atom_instance_dict[resource_id]
                     if waiting_req.resource_type == 'link':
                         if atom_instance.link_in_use() or \
-                                (not AtomInstance.link_request_queue[0] == waiting_req):
+                                (not atom_instance.link_request_queue[0] == waiting_req):
                             can_issue = False
                             break
                     elif waiting_req.resource_type == 'compute':
                         if  atom_instance.compute_in_use() or \
-                                (not AtomInstance.compute_request_queue[0] == waiting_req):
+                                (not atom_instance.compute_request_queue[0] == waiting_req):
                             can_issue = False
                             break
                 
@@ -179,11 +180,11 @@ class AtomModule(SimModule):
 
         self.current_command:Optional[ComputeCommand] = None 
 
-        self.register_coroutine(self.processs)
+        self.register_coroutine(self.process)
         self.register_coroutine(self.compute_handler)
         self.register_coroutine(self.store_handler)
     
-    def processs(self):
+    def process(self):
         while True:
             if self.compute_command_queue.is_empty():
                 return
@@ -233,4 +234,21 @@ class AtomModule(SimModule):
         pass 
 
     def reduce_write_dma_helper(self):
+        pass
+
+
+
+
+
+
+class AtomDie(SimModule):
+    def __init__(self,atom_id:int=-1):
+        super().__init__()
+
+        self.atom_id = atom_id
+
+        self.l2_memory = ChunkMemory()
+
+        self.atom_module = AtomModule(atom_id)
+
         pass
