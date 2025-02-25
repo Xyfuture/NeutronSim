@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
@@ -11,6 +12,8 @@ from Desim.memory.Memory import DepMemory, DepMemoryPort, ChunkMemoryPort
 from Desim.module.FIFO import FIFO,DelayFIFO
 from Desim.module.Pipeline import PipeGraph
 
+from NeutronSim.IOD import IODie
+
 
 @dataclass
 class SendEngineConfig:
@@ -23,9 +26,10 @@ class SubSendEngine(SimModule):
 
         self.register_coroutine(self.process)
 
-        self.send_command_queue:Optional[FIFO] = None 
-        
-        self.atom_manager:AtomManager = None
+        self.external_send_command_queue:Optional[FIFO] = None
+        self.external_send_engine:Optional[SendEngine] = None
+
+        self.external_atom_manager:Optional[AtomManager] = None
 
         self.l3_memory_read_port:ChunkMemoryPort = ChunkMemoryPort()
 
@@ -37,12 +41,15 @@ class SubSendEngine(SimModule):
 
         self.acquire_finish_event:Event = Event()
 
-    def config_connection(self):
+    def config_connection(self,atom_manager:AtomManager,io_die:IODie,send_engine:SendEngine):
         """
         用于构建各种连接关系
         """
 
-        pass
+        self.external_atom_manager=atom_manager
+        self.l3_memory_read_port.config_chunk_memory(io_die.l3_memory)
+        self.external_send_engine = send_engine
+        self.external_send_command_queue = self.external_send_engine.send_command_queue
 
 
     def l3_read_dma_handler(self,input_fifo_map:Optional[dict[str,FIFO]],output_fifo_map:Optional[dict[str,FIFO]])->bool:
@@ -86,7 +93,7 @@ class SubSendEngine(SimModule):
     def l2_write_dma_helper(self,atom_id:int):
         def l2_write_dma_handler(input_fifo_map:Optional[dict[str,FIFO]],output_fifo_map:Optional[dict[str,FIFO]]):
             l2_write_port = ChunkMemoryPort()
-            l2_write_port.config_chunk_memory(atom_instance.l2_memory)
+            l2_write_port.config_chunk_memory(atom_die.l2_memory)
 
             write_addr = self.current_command.dst
             for i in range(self.current_command.chunk_num):
@@ -100,18 +107,18 @@ class SubSendEngine(SimModule):
 
             return False
 
-        atom_instance = self.atom_manager.get_atom_instance(atom_id)
+        atom_die = self.external_atom_manager.get_atom_instance(atom_id).atom_die
 
         return l2_write_dma_handler
 
     def process(self):
         while True:
             # 读取新的指令, 如果指令队列空了,就说明没有新的指令了,退出执行
-            if self.send_command_queue.is_empty():
+            if self.external_send_command_queue.is_empty():
                 return
 
             # 读取新的指令
-            command:SendCommand = self.send_command_queue.read()
+            command:SendCommand = self.external_send_command_queue.read()
             self.current_command = command
             # 对指令进行解析,并申请资源 
             acquire_req = AtomResourceRequest(
@@ -122,7 +129,7 @@ class SubSendEngine(SimModule):
                 acquire_finish_event= self.acquire_finish_event
             )
 
-            self.atom_manager.handle_acquire_request(acquire_req)
+            self.external_atom_manager.handle_acquire_request(acquire_req)
             SimModule.wait(self.acquire_finish_event)
 
             # 构建流水线处理指令
@@ -161,7 +168,7 @@ class SubSendEngine(SimModule):
                 resources_id=command.group_id,
                 requester_id=self.sub_send_engine_id,
             )
-            self.atom_manager.handle_release_request(release_req)
+            self.external_atom_manager.handle_release_request(release_req)
             # 处理结束 等一个周期在处理下一次的请求吧
             self.current_command = None
             SimModule.wait_time(SimTime(1))
@@ -183,7 +190,7 @@ class SendEngine(SimModule):
 
         self.send_engine_config:SendEngineConfig = SendEngineConfig()
 
-        self.atom_manager:AtomManager = AtomManager()
+        self.external_atom_manager:Optional[AtomManager] = None
 
         # 构建所有的 send engine
         self.sub_send_engine_list:list[SubSendEngine] = []
@@ -192,12 +199,16 @@ class SendEngine(SimModule):
                 SubSendEngine(i)
             )
 
-    def config_connection(self):
+    def config_connection(self,atom_manager:AtomManager,io_die:IODie):
         """
         配置内外部各种的连接关系
         :return:
         """
 
+        self.external_atom_manager = atom_manager
+
+        for sub_send_engine in self.sub_send_engine_list:
+            sub_send_engine.config_connection(atom_manager,io_die,self)
 
         pass
 

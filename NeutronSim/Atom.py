@@ -23,7 +23,7 @@ class AtomInstance(SimModule):
 
         self.instance_id:int = 0
 
-        self.atom_module = None
+        self.atom_die:Optional[AtomDie] = None
 
         self.link_request_queue:deque[AtomResourceRequest] = deque()
 

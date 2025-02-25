@@ -13,18 +13,6 @@ class MemoryConfig:
 
 
 
-@dataclass
-class BasicChunkConfig:
-    """
-    仅配置 num elements 和 batch size
-    这两个值应该贯穿整个执行的过程
-    数据格式不约束，由具体的指令来指定
-    """
-
-    num_elements:int = 128
-    batch_size:int = 16
-
-
 
 element_bytes_dict = {
     'fp16': 2,

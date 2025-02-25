@@ -10,7 +10,7 @@ from Desim.module.Pipeline import PipeGraph, PipeStage
 
 from Desim.memory.Memory import DepMemory, DepMemoryPort, ChunkMemory, ChunkPacket
 
-from NeutronSim.Config import BasicChunkConfig, element_bytes_dict
+from NeutronSim.Config import element_bytes_dict
 from deps.Desim.Desim.memory.Memory import ChunkMemoryPort
 
 PipeArg:TypeAlias = Optional[dict[str,FIFO]]
@@ -38,11 +38,10 @@ class ReceiveEngine(SimModule):
 
         self.register_coroutine(self.process)
 
-        self.l3_memory:Optional[ChunkMemory] = None
-        self.reduce_memory:Optional[ChunkMemory] = None
+        self.external_l3_memory:Optional[ChunkMemory] = None
+        self.external_reduce_memory:Optional[ChunkMemory] = None
 
 
-        self.basic_chunk_config = BasicChunkConfig()
 
 
     def load_command(self,command_list:list[ReceiveBaseCommand]):
@@ -178,7 +177,7 @@ class ReceiveEngine(SimModule):
 
             # 构建 port 进行连接
             reduce_read_port = ChunkMemoryPort()
-            reduce_read_port.config_chunk_memory(self.reduce_memory)
+            reduce_read_port.config_chunk_memory(self.external_reduce_memory)
 
 
 
@@ -190,7 +189,6 @@ class ReceiveEngine(SimModule):
             src_addr = src_map[read_dma_id]
 
             # 该 DMA 会被使用，根据指令确定读取次数，并发送到指定的下一个队列中
-            assert self.current_command.chunk_size == self.basic_chunk_config.num_elements
             for i in range(self.current_command.chunk_num):
                 # 读取一个chunk的数据
 
@@ -233,7 +231,7 @@ class ReceiveEngine(SimModule):
                 return False
 
             l3_read_port = ChunkMemoryPort()
-            l3_read_port.config_chunk_memory(self.l3_memory)
+            l3_read_port.config_chunk_memory(self.external_l3_memory)
 
             if isinstance(self.current_command, ReceiveCommand):
                 src_map = {0:self.current_command.src0,1:self.current_command.src1,2:self.current_command.asrc}
@@ -300,7 +298,7 @@ class ReceiveEngine(SimModule):
                 return False
 
             l3_write_port = ChunkMemoryPort()
-            l3_write_port.config_chunk_memory(self.l3_memory)
+            l3_write_port.config_chunk_memory(self.external_l3_memory)
 
             input_fifo = input_fifo_map[f'to_write_dma_{write_dma_id}']
 
