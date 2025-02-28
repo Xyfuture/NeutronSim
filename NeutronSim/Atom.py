@@ -6,9 +6,9 @@ from Desim.Core import SimModule
 from Desim.Core import Event
 
 from NeutronSim.Commands import ComputeCommand
-from NeutronSim.Config import MemoryConfig
+from NeutronSim.Config import MemoryConfig, element_bytes_dict
 from Desim.Core import SimTime
-from Desim.memory.Memory import DepMemory
+from Desim.memory.Memory import DepMemory, ChunkMemoryPort, ChunkPacket
 
 from Desim.memory.Memory import ChunkMemory
 
@@ -175,7 +175,6 @@ class AtomModule(SimModule):
  
 
         self.fetch_to_compute_fifo:FIFO = FIFO(10)
-        self.compute_to_store_fifo:FIFO = FIFO(10)
 
 
         # self.register_coroutine(self.process)
@@ -204,36 +203,84 @@ class AtomModule(SimModule):
 
 
     def fetch_engine_handler(self):
+        l2_memory_read_port = ChunkMemoryPort()
+        l2_memory_read_port.config_chunk_memory(self.l2_memory)
         # 这个只是从 l2 memory 中读取
         while True:
             if self.compute_engine_command_queue.is_empty():
                 return
             
             current_command = self.compute_engine_command_queue.read()
-
             # 执行这一条指令
+            for i in range(current_command.src_chunk_num):
+                data = l2_memory_read_port.read(current_command.src + i, 1, current_command.src_free,
+                                                current_command.src_chunk_size, current_command.batch_size,
+                                                element_bytes_dict[current_command.src_dtype])
+
+                chunk_packet = ChunkPacket(
+                    payload=data,
+                    num_elements=current_command.src_chunk_size,
+                    batch_size=current_command.batch_size,
+                    element_bytes=element_bytes_dict[current_command.src_dtype]
+                )
+
+                self.fetch_to_compute_fifo.write(chunk_packet)
 
 
     def compute_engine_handler(self):
+        l2_memory_write_port = ChunkMemoryPort()
+        l2_memory_write_port.config_chunk_memory(self.l2_memory)
         while True:
             # 获取到指令, 开始执行 
             if self.compute_engine_command_queue.is_empty():
                 return 
-            
-            current_command = self.compute_engine_command_queue.read()
 
-            # 执行这一条指令
-            
+            current_command:ComputeCommand = self.compute_engine_command_queue.read()
+            # 执行这一条指令 , 直接按照算力之类的计算延迟应该是可行的
+
+            for i in range(current_command.src_chunk_num):
+
+                # 读取一次数据
+                chunk_packet = self.fetch_to_compute_fifo.read()
+
+                for j in range(current_command.dst_chunk_num):
+                    pass #  src_chunk_size * dst_chunk_size 的一个小块
+
+                    # 等待某一个延迟的时间
+                    latency = 0
+                    SimModule.wait_time(SimTime(latency))
+
+
+            # 摆了, 就先这样吧
+            # 所有计算都已经结束, 结果写入到了 acc buffer中, 等待讲acc buffer的结果写入到l2 中
+            if current_command.last_acc:
+                # 要进行读出操作, 写入到 L2 中
+                for i in range(current_command.dst_chunk_num):
+                    chunk_packet = ChunkPacket(
+                        payload = None,
+                        num_elements = current_command.dst_chunk_size,
+                        batch_size = current_command.batch_size,
+                        element_bytes = 4
+                    )
+                    l2_memory_write_port.write(current_command.dst,chunk_packet,True,
+                                               current_command.dst_chunk_size,current_command.batch_size,4)
+
 
 
     def store_engine_handler(self):
+        """
+        从l2中读出,写入到 l3中,  需要走 uci-e link
+        """
+        l2_memory_read_port = ChunkMemoryPort()
+        l2_memory_read_port.config_chunk_memory(self.l2_memory)
+
         while True:
-            self.store_start_semaphore.wait()
+            if self.store_engine_command_queue.is_empty():
+                return
 
+            current_command = self.store_engine_command_queue.read()
 
-            # 执行完毕 
-            self.store_finish_semaphore.post()
-
+            # 执行这个指令
 
     def l2_read_dma_helper(self):
         pass

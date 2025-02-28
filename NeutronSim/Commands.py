@@ -21,7 +21,31 @@ class SendCommand:
 
 @dataclass 
 class ComputeCommand:
-    pass
+    opcode:str
+
+    group_id:list[int] = field(default_factory=list)
+
+    batch_size:int = -1
+
+    dst:int = -1  # L2 memory上的地址
+    dst_chunk_size:int = -1
+    dst_chunk_num:int = -1
+
+    dst_free:bool = False
+
+    reddst:int = -1
+    redid:int = -1
+
+    src:int = -1
+    src_chunk_size:int = -1
+    src_chunk_num:int = -1
+    src_dtype:Literal['fp16','bf16','fp32'] = ''
+    src_free:bool = False
+
+    first_acc:bool = False
+    last_acc:bool = False
+
+
 
 
 @dataclass
