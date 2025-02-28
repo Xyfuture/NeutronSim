@@ -169,53 +169,64 @@ class AtomModule(SimModule):
         
 
         # 假设指令一开始就能直接发送到 ATOM Die 中缓存执行
-        self.compute_command_queue:Optional[FIFO] = None
+        self.fetch_engine_command_queue:Optional[FIFO] = None
+        self.compute_engine_command_queue:Optional[FIFO] = None
+        self.store_engine_command_queue:Optional[FIFO] = None
+ 
+
+        self.fetch_to_compute_fifo:FIFO = FIFO(10)
+        self.compute_to_store_fifo:FIFO = FIFO(10)
 
 
-        # 内部使用
-        self.compute_start_semaphore = SimSemaphore(0)
-        self.compute_finish_semaphore = SimSemaphore(0)
-        self.store_start_semaphore = SimSemaphore(0)
-        self.store_finish_semaphore = SimSemaphore(0)
-
-        self.current_command:Optional[ComputeCommand] = None 
-
-        self.register_coroutine(self.process)
-        self.register_coroutine(self.compute_handler)
-        self.register_coroutine(self.store_handler)
+        # self.register_coroutine(self.process)
+        self.register_coroutine(self.compute_engine_handler)
+        self.register_coroutine(self.store_engine_handler)
+        self.register_coroutine(self.fetch_engine_handler)
     
-    def process(self):
+    # def process(self):
+    #     while True:
+    #         if self.compute_command_queue.is_empty():
+    #             return
+
+    #         # 取一条指令
+    #         self.current_command = self.compute_command_queue.read()
+            
+    #         # 驱动 compute 和 store 操作
+    #         self.compute_start_semaphore.post()
+    #         self.store_start_semaphore.post()
+
+    #         # 等待上述两个子操作结束
+    #         self.compute_finish_semaphore.wait()
+    #         self.store_finish_semaphore.wait()
+
+    #         # 执行完毕 
+    #         SimModule.wait_time(SimTime(1))
+
+
+    def fetch_engine_handler(self):
+        # 这个只是从 l2 memory 中读取
         while True:
-            if self.compute_command_queue.is_empty():
+            if self.compute_engine_command_queue.is_empty():
                 return
-
-            # 取一条指令
-            self.current_command = self.compute_command_queue.read()
             
-            # 驱动 compute 和 store 操作
-            self.compute_start_semaphore.post()
-            self.store_start_semaphore.post()
+            current_command = self.compute_engine_command_queue.read()
 
-            # 等待上述两个子操作结束
-            self.compute_finish_semaphore.wait()
-            self.store_finish_semaphore.wait()
-
-            # 执行完毕 
-            SimModule.wait_time(SimTime(1))
+            # 执行这一条指令
 
 
-    def compute_handler(self):
+    def compute_engine_handler(self):
         while True:
-            self.compute_start_semaphore.wait()
-
             # 获取到指令, 开始执行 
+            if self.compute_engine_command_queue.is_empty():
+                return 
+            
+            current_command = self.compute_engine_command_queue.read()
+
+            # 执行这一条指令
             
 
-            # 执行完毕
-            self.compute_finish_semaphore.post()
 
-
-    def store_handler(self):
+    def store_engine_handler(self):
         while True:
             self.store_start_semaphore.wait()
 
