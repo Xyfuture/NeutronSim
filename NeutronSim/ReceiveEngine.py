@@ -64,27 +64,27 @@ class ReceiveEngine(SimModule):
                 # 还是构建一个固定的流水线吧, 通过调整里面的流水级的函数实现 各种操作
 
                 if self.current_command.src0_loc == 'l3':
-                    read_dma_0_stage = PipeStage(self.l3_read_dma_helper(0))
+                    read_dma_0_stage = PipeStage.dynamic_create(self.l3_read_dma_helper(0))
                 elif self.current_command.src0_loc == 'reduce':
-                    read_dma_0_stage = PipeStage(self.reduce_read_dma_helper(0))
+                    read_dma_0_stage = PipeStage.dynamic_create(self.reduce_read_dma_helper(0))
                 else:
                     assert False
 
                 if self.current_command.src1_loc == 'l3':
-                    read_dma_1_stage = PipeStage(self.l3_read_dma_helper(1))
+                    read_dma_1_stage = PipeStage.dynamic_create(self.l3_read_dma_helper(1))
                 elif self.current_command.src1_loc == 'reduce':
-                    read_dma_1_stage = PipeStage(self.reduce_read_dma_helper(1))
+                    read_dma_1_stage = PipeStage.dynamic_create(self.reduce_read_dma_helper(1))
                 else:
                     assert False
 
-                read_dma_a_stage = PipeStage(self.l3_read_dma_helper(2))
-                act_stage = PipeStage(self.act_handler)
-                mul_quant_stage = PipeStage(self.mul_quant_handler)
-                add_stage = PipeStage(self.add_handler)
-                fork_stage = PipeStage(self.fork_handler)
+                read_dma_a_stage = PipeStage.dynamic_create(self.l3_read_dma_helper(2))
+                act_stage = PipeStage.dynamic_create(self.act_handler)
+                mul_quant_stage = PipeStage.dynamic_create(self.mul_quant_handler)
+                add_stage = PipeStage.dynamic_create(self.add_handler)
+                fork_stage = PipeStage.dynamic_create(self.fork_handler)
 
-                write_dma_0_stage = PipeStage(self.l3_write_dma_helper(0))
-                write_dma_1_stage = PipeStage(self.l3_write_dma_helper(1))
+                write_dma_0_stage = PipeStage.dynamic_create(self.l3_write_dma_helper(0))
+                write_dma_1_stage = PipeStage.dynamic_create(self.l3_write_dma_helper(1))
 
                 pipe_graph.add_stage(read_dma_0_stage,'read_dma_0_stage')
                 pipe_graph.add_stage(read_dma_1_stage,'read_dma_1_stage')
@@ -110,11 +110,11 @@ class ReceiveEngine(SimModule):
 
 
             elif isinstance(self.current_command, QuantCommand):
-                read_dma_0_stage = PipeStage(self.l3_read_dma_helper(0))
-                mul_quant_stage = PipeStage(self.mul_quant_handler)
-                fork_stage = PipeStage(self.fork_handler)
+                read_dma_0_stage = PipeStage.dynamic_create(self.l3_read_dma_helper(0))
+                mul_quant_stage = PipeStage.dynamic_create(self.mul_quant_handler)
+                fork_stage = PipeStage.dynamic_create(self.fork_handler)
 
-                write_dma_0_stage = PipeStage(self.l3_write_dma_helper(0))
+                write_dma_0_stage = PipeStage.dynamic_create(self.l3_write_dma_helper(0))
 
                 pipe_graph.add_stage(read_dma_0_stage,'read_dma_0_stage')
                 pipe_graph.add_stage(mul_quant_stage,'mul_quant_stage')
@@ -128,6 +128,8 @@ class ReceiveEngine(SimModule):
                 pipe_graph.build_graph()
                 pipe_graph.config_sink_stage_names(['write_dma_0_stage'])
 
+
+            pipe_graph.start_pipe_graph()
 
             # 等待流水线执行完毕
             pipe_graph.wait_pipe_graph_finish()
