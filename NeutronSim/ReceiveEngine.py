@@ -452,7 +452,9 @@ class ReceiveEngine(SimModule):
 
         return False
 
-
+    def config_connection(self,l3_memory:ChunkMemory,reduce_memory:ChunkMemory):
+        self.external_reduce_memory = reduce_memory
+        self.external_l3_memory = l3_memory
 
 
 

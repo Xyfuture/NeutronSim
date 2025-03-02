@@ -34,7 +34,7 @@ class ComputeCommand:
     dst_free:bool = False
 
     reddst:int = -1
-    redid:int = -1
+    redid:list[int] = field(default=list)
 
     src:int = -1
     src_chunk_size:int = -1

@@ -14,16 +14,14 @@ from Desim.memory.Memory import ChunkMemory
 
 from Desim.module.FIFO import FIFO,DelayFIFO
 
-from deps.Desim.Desim.Sync import SimSemaphore
-
 
 class AtomInstance(SimModule):
-    def __init__(self):
+    def __init__(self,atom_id:int = -1):
         super().__init__()
 
-        self.instance_id:int = 0
+        self.atom_id:int = atom_id
 
-        self.atom_die:Optional[AtomDie] = None
+        self.atom_die:Optional[AtomDie] = AtomDie(atom_id)
 
         self.link_request_queue:deque[AtomResourceRequest] = deque()
 
@@ -44,11 +42,14 @@ class AtomInstance(SimModule):
     def compute_in_use(self)->bool:
         return self.current_compute_request is not None
 
+    def load_command(self,command_list:list[ComputeCommand]):
+        self.atom_die.load_command(command_list)
+
+    def config_connection(self, reduce_memory:ChunkMemory):
+        self.atom_die.config_connection(reduce_memory)
 
 
-
-
-@dataclass 
+@dataclass
 class AtomResourceRequest:
     resource_type:Optional[Literal['link','compute']] = None  # link 仅表示单向的输入带宽,输出 link 自动控制 
     access_type:Optional[Literal['acquire','release']] = None 
@@ -71,7 +72,8 @@ class AtomManager(SimModule):
 
 
         self.atom_instance_dict:dict[int,AtomInstance]=dict()
-
+        for i in range(8):
+            self.atom_instance_dict[i] = AtomInstance()
 
         self.update_event = Event()
 
@@ -153,21 +155,26 @@ class AtomManager(SimModule):
         self.pending_release_request_queue.append(req)
         self.update_event.notify(SimTime(0))
 
-
     def get_atom_instance(self,atom_id:int) -> AtomInstance:
         return self.atom_instance_dict[atom_id]
 
+    def load_command(self,command_list:list[ComputeCommand]):
+        for atom_instance in self.atom_instance_dict.values():
+            atom_instance.load_command(command_list)
+
+    def config_connection(self,reduce_memory:ChunkMemory):
+        for atom_instance in self.atom_instance_dict.values():
+            atom_instance.config_connection(reduce_memory)
 
 
-class AtomModule(SimModule):
+class AtomDie(SimModule):
     def __init__(self,atom_id:int=-1):
         super().__init__()
 
         self.atom_id = atom_id
         
-        self.l2_memory = ChunkMemory()
-
-        self.external_reduce_memory = ChunkMemory()
+        self.l2_memory:ChunkMemory = ChunkMemory()
+        self.external_reduce_memory:Optional[ChunkMemory] = None
         
 
         # 假设指令一开始就能直接发送到 ATOM Die 中缓存执行
@@ -178,8 +185,8 @@ class AtomModule(SimModule):
 
         self.fetch_to_compute_fifo:FIFO = FIFO(10)
 
-        self.store_link_fifo:DelayFIFO = DelayFIFO(10,0)
-
+        self.store_read_to_link_fifo:DelayFIFO = DelayFIFO(10, 0)
+        self.store_link_to_write_fifo:FIFO = FIFO(10)
 
         # self.register_coroutine(self.process)
         self.register_coroutine(self.fetch_engine_handler)
@@ -187,25 +194,8 @@ class AtomModule(SimModule):
 
         self.register_coroutine(self.store_engine_read_handler)
         self.register_coroutine(self.store_engine_write_handler)    
-    
-    # def process(self):
-    #     while True:
-    #         if self.compute_command_queue.is_empty():
-    #             return
+        self.register_coroutine(self.link_handler)
 
-    #         # 取一条指令
-    #         self.current_command = self.compute_command_queue.read()
-            
-    #         # 驱动 compute 和 store 操作
-    #         self.compute_start_semaphore.post()
-    #         self.store_start_semaphore.post()
-
-    #         # 等待上述两个子操作结束
-    #         self.compute_finish_semaphore.wait()
-    #         self.store_finish_semaphore.wait()
-
-    #         # 执行完毕 
-    #         SimModule.wait_time(SimTime(1))
 
 
     def fetch_engine_handler(self):
@@ -217,6 +207,9 @@ class AtomModule(SimModule):
                 return
             
             current_command = self.compute_engine_command_queue.read()
+
+            # TODO check 这个指令的 atom id 是否匹配
+
             # 执行这一条指令
             for i in range(current_command.src_chunk_num):
                 data = l2_memory_read_port.read(current_command.src + i, 1, current_command.src_free,
@@ -301,9 +294,20 @@ class AtomModule(SimModule):
                     batch_size=current_command.batch_size,
                     element_bytes=4
                 )
-                self.store_link_fifo.delay_write(ChunkPacket,SimTime(100))
+                self.store_read_to_link_fifo.delay_write(chunk_packet, SimTime(100))
 
             
+    def link_handler(self):
+        while True:
+            chunk_packet = self.store_read_to_link_fifo.read()
+            #TODO 计算时间
+            transfer_latency = 10
+
+            SimModule.wait_time(SimTime(transfer_latency))
+
+            self.store_link_to_write_fifo.write(chunk_packet)
+
+
 
 
     def store_engine_write_handler(self):
@@ -317,26 +321,27 @@ class AtomModule(SimModule):
         while True:
             if self.store_engine_write_command_queue.is_empty():
                 return
-            current_command = self.store_engine_write_command_queue.read()  
+            current_command:ComputeCommand = self.store_engine_write_command_queue.read()
 
             # 写 reduce memory  
-            # 需要计算复杂的地址 
+            # 需要计算复杂的地址
+            reduce_addr = current_command.reddst + current_command.redid[self.atom_id]*current_command.dst_chunk_num
+            for i in range(current_command.dst_chunk_num):
+                chunk_packet = self.store_link_to_write_fifo.read()
+
+                reduce_memory_write_port.write(reduce_addr+i,chunk_packet,False,
+                                               current_command.dst_chunk_size,current_command.batch_size,4)
 
 
+    def load_command(self,command_list:list[ComputeCommand]):
+        command_size = len(command_list)
+        self.fetch_engine_command_queue = FIFO(command_size,command_size,command_list)
+        self.compute_engine_command_queue = FIFO(command_size,command_size,command_list)
+        self.store_engine_read_command_queue = FIFO(command_size,command_size,command_list)
+        self.store_engine_write_command_queue = FIFO(command_size,command_size,command_list)
 
 
+    def config_connection(self,reduce_memory:ChunkMemory):
+        self.external_reduce_memory  = reduce_memory
 
 
-
-
-class AtomDie(SimModule):
-    def __init__(self,atom_id:int=-1):
-        super().__init__()
-
-        self.atom_id = atom_id
-
-        self.l2_memory = ChunkMemory()
-
-        self.atom_module = AtomModule(atom_id)
-
-        pass

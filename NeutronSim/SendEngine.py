@@ -8,7 +8,7 @@ from NeutronSim.Atom import AtomManager,AtomResourceRequest
 from NeutronSim.Commands import SendCommand
 from NeutronSim.Config import MemoryConfig, LinkConfig, element_bytes_dict
 from Desim.Core import Event, SimModule, SimTime
-from Desim.memory.Memory import DepMemory, DepMemoryPort, ChunkMemoryPort
+from Desim.memory.Memory import DepMemory, DepMemoryPort, ChunkMemoryPort, ChunkMemory
 from Desim.module.FIFO import FIFO,DelayFIFO
 from Desim.module.Pipeline import PipeGraph
 
@@ -41,13 +41,13 @@ class SubSendEngine(SimModule):
 
         self.acquire_finish_event:Event = Event()
 
-    def config_connection(self,atom_manager:AtomManager,io_die:IODie,send_engine:SendEngine):
+    def config_connection(self,atom_manager:AtomManager,l3_memory:ChunkMemory,send_engine:SendEngine):
         """
         用于构建各种连接关系
         """
 
         self.external_atom_manager=atom_manager
-        self.l3_memory_read_port.config_chunk_memory(io_die.l3_memory)
+        self.l3_memory_read_port.config_chunk_memory(l3_memory)
         self.external_send_engine = send_engine
         self.external_send_command_queue = self.external_send_engine.send_command_queue
 
@@ -199,7 +199,7 @@ class SendEngine(SimModule):
                 SubSendEngine(i)
             )
 
-    def config_connection(self,atom_manager:AtomManager,io_die:IODie):
+    def config_connection(self,atom_manager:AtomManager,l3_memory:ChunkMemory):
         """
         配置内外部各种的连接关系
         :return:
@@ -208,7 +208,7 @@ class SendEngine(SimModule):
         self.external_atom_manager = atom_manager
 
         for sub_send_engine in self.sub_send_engine_list:
-            sub_send_engine.config_connection(atom_manager,io_die,self)
+            sub_send_engine.config_connection(atom_manager,l3_memory,self)
 
         pass
 
