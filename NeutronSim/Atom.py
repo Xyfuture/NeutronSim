@@ -12,7 +12,7 @@ from Desim.memory.Memory import DepMemory, ChunkMemoryPort, ChunkPacket
 
 from Desim.memory.Memory import ChunkMemory
 
-from Desim.module.FIFO import FIFO
+from Desim.module.FIFO import FIFO,DelayFIFO
 
 from deps.Desim.Desim.Sync import SimSemaphore
 
@@ -166,21 +166,27 @@ class AtomModule(SimModule):
         self.atom_id = atom_id
         
         self.l2_memory = ChunkMemory()
+
+        self.external_reduce_memory = ChunkMemory()
         
 
         # 假设指令一开始就能直接发送到 ATOM Die 中缓存执行
         self.fetch_engine_command_queue:Optional[FIFO] = None
         self.compute_engine_command_queue:Optional[FIFO] = None
-        self.store_engine_command_queue:Optional[FIFO] = None
- 
+        self.store_engine_read_command_queue:Optional[FIFO] = None
+        self.store_engine_write_command_queue:Optional[FIFO] = None
 
         self.fetch_to_compute_fifo:FIFO = FIFO(10)
 
+        self.store_link_fifo:DelayFIFO = DelayFIFO(10,0)
+
 
         # self.register_coroutine(self.process)
-        self.register_coroutine(self.compute_engine_handler)
-        self.register_coroutine(self.store_engine_handler)
         self.register_coroutine(self.fetch_engine_handler)
+        self.register_coroutine(self.compute_engine_handler)
+
+        self.register_coroutine(self.store_engine_read_handler)
+        self.register_coroutine(self.store_engine_write_handler)    
     
     # def process(self):
     #     while True:
@@ -267,7 +273,7 @@ class AtomModule(SimModule):
 
 
 
-    def store_engine_handler(self):
+    def store_engine_read_handler(self):
         """
         从l2中读出,写入到 l3中,  需要走 uci-e link
         """
@@ -275,24 +281,48 @@ class AtomModule(SimModule):
         l2_memory_read_port.config_chunk_memory(self.l2_memory)
 
         while True:
-            if self.store_engine_command_queue.is_empty():
+            if self.store_engine_read_command_queue.is_empty():
                 return
 
-            current_command = self.store_engine_command_queue.read()
+            current_command:ComputeCommand = self.store_engine_read_command_queue.read()
+            # 执行这个指令, 从l2 memory中读取数据,然后通过 delay fifo 发送给 l3 memory
 
-            # 执行这个指令
+            if not current_command.last_acc:
+                continue
 
-    def l2_read_dma_helper(self):
-        pass
+            for i in range(current_command.dst_chunk_num):
+                data = l2_memory_read_port.read(current_command.dst + i, 1, current_command.dst_free,
+                                                current_command.dst_chunk_size, current_command.batch_size,
+                                                4)
+                
+                chunk_packet = ChunkPacket(
+                    payload=data,
+                    num_elements=current_command.dst_chunk_size,
+                    batch_size=current_command.batch_size,
+                    element_bytes=4
+                )
+                self.store_link_fifo.delay_write(ChunkPacket,SimTime(100))
 
-    def l2_write_dma_helper(self):
-        pass
+            
 
-    def link_handler(self):
-        pass 
 
-    def reduce_write_dma_helper(self):
-        pass
+    def store_engine_write_handler(self):
+        """
+        接收 uci-e link 传来的数据, 然后写入到 l3 中
+        """
+        
+        reduce_memory_write_port = ChunkMemoryPort()
+        reduce_memory_write_port.config_chunk_memory(self.external_reduce_memory)
+
+        while True:
+            if self.store_engine_write_command_queue.is_empty():
+                return
+            current_command = self.store_engine_write_command_queue.read()  
+
+            # 写 reduce memory  
+            # 需要计算复杂的地址 
+
+
 
 
 
