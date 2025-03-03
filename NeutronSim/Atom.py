@@ -1,8 +1,8 @@
 from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass,field
-from typing import Literal, Optional, Union
-from Desim.Core import SimModule
+from typing import Literal, Optional, Union, Deque
+from Desim.Core import SimModule, SimSession
 from Desim.Core import Event
 
 from NeutronSim.Commands import ComputeCommand
@@ -73,7 +73,7 @@ class AtomManager(SimModule):
 
         self.atom_instance_dict:dict[int,AtomInstance]=dict()
         for i in range(8):
-            self.atom_instance_dict[i] = AtomInstance()
+            self.atom_instance_dict[i] = AtomInstance(i)
 
         self.update_event = Event()
 
@@ -102,7 +102,7 @@ class AtomManager(SimModule):
                         self.atom_instance_dict[resource_id].compute_request_queue.append(acquire_req)
                 
             # 从 waiting 的 queue 中取出符合标准的
-            issue_queue = deque()
+            issue_queue:Deque[AtomResourceRequest] = deque()
             for waiting_req in self.waiting_acquire_request_queue:
                 can_issue = True
                 for resource_id in waiting_req.resources_id:
@@ -137,7 +137,9 @@ class AtomManager(SimModule):
                         waiting_req.acquire_finish_event.notify(SimTime(0))
 
             for req in issue_queue:
-                self.waiting_acquire_request_queue.remove(req) # 不支持中间的元素的删除  emmm 
+                self.waiting_acquire_request_queue.remove(req) # 不支持中间的元素的删除  emmm
+                # 释放对应的请求
+                req.acquire_finish_event.notify(SimTime(1))
 
             
 
@@ -203,10 +205,10 @@ class AtomDie(SimModule):
         l2_memory_read_port.config_chunk_memory(self.l2_memory)
         # 这个只是从 l2 memory 中读取
         while True:
-            if self.compute_engine_command_queue.is_empty():
+            if self.fetch_engine_command_queue.is_empty():
                 return
             
-            current_command = self.compute_engine_command_queue.read()
+            current_command = self.fetch_engine_command_queue.read()
 
             # TODO check 这个指令的 atom id 是否匹配
 
@@ -261,9 +263,11 @@ class AtomDie(SimModule):
                         batch_size = current_command.batch_size,
                         element_bytes = 4
                     )
-                    l2_memory_write_port.write(current_command.dst,chunk_packet,True,
-                                               current_command.dst_chunk_size,current_command.batch_size,4)
 
+                    print(f'atom id {self.atom_id} before write at time {SimSession.sim_time}')
+                    l2_memory_write_port.write(current_command.dst+i,chunk_packet,True,
+                                               current_command.dst_chunk_size,current_command.batch_size,4)
+                    print(f'atom id {self.atom_id} after write at time {SimSession.sim_time}')
 
 
     def store_engine_read_handler(self):

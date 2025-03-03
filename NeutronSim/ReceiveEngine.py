@@ -11,7 +11,7 @@ from Desim.module.Pipeline import PipeGraph, PipeStage
 from Desim.memory.Memory import DepMemory, DepMemoryPort, ChunkMemory, ChunkPacket
 
 from NeutronSim.Config import element_bytes_dict
-from deps.Desim.Desim.memory.Memory import ChunkMemoryPort
+from Desim.memory.Memory import ChunkMemoryPort
 
 PipeArg:TypeAlias = Optional[dict[str,FIFO]]
 
@@ -97,8 +97,8 @@ class ReceiveEngine(SimModule):
                 pipe_graph.add_stage(write_dma_1_stage,'write_dma_1_stage')
 
                 pipe_graph.add_edge('read_dma_0_stage','act_stage','to_act',1)
-                pipe_graph.add_edge('read_dma_1_stage','mul_quant_stage','to_mul_quant_0',1)
-                pipe_graph.add_edge('act_stage','mul_quant_stage','to_mul_quant_1',1)
+                pipe_graph.add_edge('read_dma_1_stage','mul_quant_stage','to_mul_quant_1',1)
+                pipe_graph.add_edge('act_stage','mul_quant_stage','to_mul_quant_0',1)
                 pipe_graph.add_edge('mul_quant_stage','add_stage','to_add_0',1)
                 pipe_graph.add_edge('read_dma_a_stage','add_stage','to_add_1',1)
                 pipe_graph.add_edge('add_stage','fork_stage','to_fork',1)
@@ -209,6 +209,7 @@ class ReceiveEngine(SimModule):
                     2
                 )
 
+                print('read here')
 
 
                 # 根据指令的情况，向后面的部件转发数据
@@ -332,6 +333,7 @@ class ReceiveEngine(SimModule):
             return False
 
 
+        return l3_write_dma_handler
 
 
     def act_handler(self,input_fifo_map:PipeArg,output_fifo_map:PipeArg)->bool:
@@ -389,8 +391,8 @@ class ReceiveEngine(SimModule):
 
     def add_handler(self,input_fifo_map:PipeArg,output_fifo_map:PipeArg)->bool:
 
-        input_from_mul_quant = input_fifo_map['to_add_1']
-        input_from_dma = input_fifo_map['to_add_2']
+        input_from_mul_quant = input_fifo_map['to_add_0']
+        input_from_dma = input_fifo_map['to_add_1']
         for i in range(self.current_command.chunk_num):
             if isinstance(self.current_command, ReceiveCommand):
                 if self.current_command.add:

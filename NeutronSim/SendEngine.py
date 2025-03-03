@@ -12,7 +12,6 @@ from Desim.memory.Memory import DepMemory, DepMemoryPort, ChunkMemoryPort, Chunk
 from Desim.module.FIFO import FIFO,DelayFIFO
 from Desim.module.Pipeline import PipeGraph
 
-from NeutronSim.IOD import IODie
 
 
 @dataclass
@@ -49,7 +48,6 @@ class SubSendEngine(SimModule):
         self.external_atom_manager=atom_manager
         self.l3_memory_read_port.config_chunk_memory(l3_memory)
         self.external_send_engine = send_engine
-        self.external_send_command_queue = self.external_send_engine.send_command_queue
 
 
     def l3_read_dma_handler(self,input_fifo_map:Optional[dict[str,FIFO]],output_fifo_map:Optional[dict[str,FIFO]])->bool:
@@ -67,7 +65,7 @@ class SubSendEngine(SimModule):
 
             # 计算一下传输的延迟, 邻接的下一个fifo是 DelayFIFO, 需要在这里仿真出来uci-e的传输开销
             for atom_id in self.current_command.group_id:
-                output_fifo_map[f'l3-uci-e-{atom_id}'].delay_write(data,SimTime(self.link_config.link_latency))
+                output_fifo_map[f'l3-uci-e-{atom_id}'].delay_write(data,SimTime(200))
 
 
 
@@ -217,6 +215,8 @@ class SendEngine(SimModule):
         command_size = len(command_list)
         self.send_command_queue = FIFO(command_size,command_size,command_list)
 
+        for sub_send_engine in self.sub_send_engine_list:
+            sub_send_engine.external_send_command_queue = self.send_command_queue
 
 
 

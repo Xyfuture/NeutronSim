@@ -21,7 +21,7 @@ class SendCommand:
 
 @dataclass 
 class ComputeCommand:
-    opcode:str
+    opcode:Literal['COMPUTE'] = ''
 
     group_id:list[int] = field(default_factory=list)
 
@@ -79,7 +79,7 @@ class ReceiveCommand(ReceiveBaseCommand):
     src1:int = -1
     src1_dtype:Literal['fp16','bf16','fp32'] = ''
     free1:bool = False
-    src1_loc:Literal['l3','reduce'] = ''
+    src1_loc:Literal['l3','reduce'] = 'reduce'
 
     redcount:int = 0
 
