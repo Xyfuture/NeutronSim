@@ -3,18 +3,30 @@ from Desim.memory.Memory import ChunkMemory
 
 from NeutronSim.Atom import AtomManager
 from NeutronSim.Commands import ReceiveBaseCommand, SendCommand, ComputeCommand
+from NeutronSim.Config import LinkConfig, MemoryConfig, AtomConfig
 from NeutronSim.ReceiveEngine import ReceiveEngine
 from NeutronSim.SendEngine import SendEngine
 
 
 class Chip(SimModule):
-    def __init__(self):
+    def __init__(self,d2d_link_config:LinkConfig,
+                    l2_memory_config:MemoryConfig,l3_memory_config:MemoryConfig,reduce_memory_config:MemoryConfig,
+                    atom_config:AtomConfig):
         super().__init__()
-        self.l3_memory = ChunkMemory()
-        self.reduce_memory = ChunkMemory()
 
-        self.atom_manager:AtomManager = AtomManager()
-        self.send_engine = SendEngine()
+        self.d2d_link_config = d2d_link_config
+        self.l2_memory_config = l2_memory_config
+        self.l3_memory_config = l3_memory_config
+        self.reduce_memory_config = reduce_memory_config
+        self.atom_config = atom_config
+
+
+
+        self.l3_memory = ChunkMemory(self.l3_memory_config.bandwidth)
+        self.reduce_memory = ChunkMemory(self.reduce_memory_config.bandwidth)
+
+        self.atom_manager:AtomManager = AtomManager(self.d2d_link_config,self.l2_memory_config,atom_config)
+        self.send_engine = SendEngine(self.d2d_link_config)
         self.receive_engine = ReceiveEngine()
 
 

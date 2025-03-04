@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import math
 from collections import deque
 from dataclasses import dataclass,field
 from typing import Literal, Optional, Union, Deque
@@ -6,7 +8,7 @@ from Desim.Core import SimModule, SimSession
 from Desim.Core import Event
 
 from NeutronSim.Commands import ComputeCommand
-from NeutronSim.Config import MemoryConfig, element_bytes_dict
+from NeutronSim.Config import MemoryConfig, element_bytes_dict, LinkConfig, AtomConfig
 from Desim.Core import SimTime
 from Desim.memory.Memory import DepMemory, ChunkMemoryPort, ChunkPacket
 
@@ -16,12 +18,18 @@ from Desim.module.FIFO import FIFO,DelayFIFO
 
 
 class AtomInstance(SimModule):
-    def __init__(self,atom_id:int = -1):
+    def __init__(self,atom_id:int = -1,
+                 d2d_link_config:LinkConfig=LinkConfig(),
+                 l2_memory_config:MemoryConfig = MemoryConfig(),
+                 atom_config:AtomConfig = AtomConfig()):
         super().__init__()
 
         self.atom_id:int = atom_id
 
-        self.atom_die:Optional[AtomDie] = AtomDie(atom_id)
+        self.atom_die:Optional[AtomDie] = AtomDie(atom_id,
+                                                  d2d_link_config,
+                                                  l2_memory_config,
+                                                  atom_config)
 
         self.link_request_queue:deque[AtomResourceRequest] = deque()
 
@@ -61,8 +69,14 @@ class AtomResourceRequest:
 
 
 class AtomManager(SimModule):
-    def __init__(self):
+    def __init__(self,d2d_link_config:LinkConfig,
+                 l2_memory_config:MemoryConfig,
+                 atom_config:AtomConfig):
         super().__init__()
+
+        self.d2d_link_config = d2d_link_config
+        self.l2_memory_config = l2_memory_config
+
 
         # pending 仅表示当前周期新来的 request , 不是处于等待状态的 request
         self.pending_acquire_request_queue:deque[AtomResourceRequest] = deque()
@@ -73,7 +87,7 @@ class AtomManager(SimModule):
 
         self.atom_instance_dict:dict[int,AtomInstance]=dict()
         for i in range(8):
-            self.atom_instance_dict[i] = AtomInstance(i)
+            self.atom_instance_dict[i] = AtomInstance(i,d2d_link_config,l2_memory_config,atom_config)
 
         self.update_event = Event()
 
@@ -170,12 +184,19 @@ class AtomManager(SimModule):
 
 
 class AtomDie(SimModule):
-    def __init__(self,atom_id:int=-1):
+    def __init__(self,atom_id:int=-1,
+                    d2d_link_config:LinkConfig=LinkConfig(),
+                    l2_memory_config:MemoryConfig=MemoryConfig(),
+                    atom_config:AtomConfig=AtomConfig()):
         super().__init__()
 
         self.atom_id = atom_id
-        
-        self.l2_memory:ChunkMemory = ChunkMemory()
+
+        self.d2d_link_config = d2d_link_config
+        self.l2_memory_config = l2_memory_config
+        self.atom_config = atom_config
+
+        self.l2_memory:ChunkMemory = ChunkMemory(self.l2_memory_config.bandwidth)
         self.external_reduce_memory:Optional[ChunkMemory] = None
         
 
@@ -248,7 +269,12 @@ class AtomDie(SimModule):
                     pass #  src_chunk_size * dst_chunk_size 的一个小块
 
                     # 等待某一个延迟的时间
-                    latency = 0
+                    assert current_command.batch_size < self.atom_config.max_batch_size
+
+                    ops = current_command.src_chunk_size * current_command.dst_chunk_size
+
+                    # TODO check here  感觉是有问题的
+                    latency = math.ceil(ops / self.atom_config.single_batch_OPS)
                     SimModule.wait_time(SimTime(latency))
 
 
@@ -298,14 +324,16 @@ class AtomDie(SimModule):
                     batch_size=current_command.batch_size,
                     element_bytes=4
                 )
-                self.store_read_to_link_fifo.delay_write(chunk_packet, SimTime(100))
+                self.store_read_to_link_fifo.delay_write(chunk_packet, SimTime(self.d2d_link_config.link_latency))
 
             
     def link_handler(self):
         while True:
-            chunk_packet = self.store_read_to_link_fifo.read()
-            #TODO 计算时间
-            transfer_latency = 10
+            chunk_packet:ChunkPacket = self.store_read_to_link_fifo.read()
+
+            chunk_bytes = chunk_packet.chunk_bytes
+
+            transfer_latency = math.ceil(chunk_bytes/self.d2d_link_config.bandwidth)
 
             SimModule.wait_time(SimTime(transfer_latency))
 

@@ -4,6 +4,7 @@ from Desim.Core import SimSession
 
 from NeutronSim.Chip import Chip
 from NeutronSim.Commands import ReceiveCommand, SendCommand, ComputeCommand
+from NeutronSim.Config import LinkConfig, MemoryConfig, AtomConfig
 
 """
 大致是仿真一个 (4,2) 的场景
@@ -144,7 +145,30 @@ if __name__ == '__main__':
     SimSession.reset()
     SimSession.init()
 
-    chip = Chip()
+
+    d2d_link_config = LinkConfig(
+        bandwidth=16,
+        link_latency=100,
+    )
+
+    l2_memory_config = MemoryConfig(
+        bandwidth=16,
+        block_size=128,
+    )
+
+    l3_memory_config = MemoryConfig(
+        bandwidth=16,
+        block_size=128,
+    )
+
+    reduce_memory_config = MemoryConfig(
+        bandwidth=16,
+        block_size=128,
+    )
+
+    atom_config = AtomConfig()
+
+    chip = Chip(d2d_link_config,l2_memory_config,l3_memory_config,reduce_memory_config)
 
     chip.load_command(
         send_command_list=gen_send_command_list(),

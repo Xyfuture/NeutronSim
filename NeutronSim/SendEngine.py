@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -8,7 +10,7 @@ from NeutronSim.Atom import AtomManager,AtomResourceRequest
 from NeutronSim.Commands import SendCommand
 from NeutronSim.Config import MemoryConfig, LinkConfig, element_bytes_dict
 from Desim.Core import Event, SimModule, SimTime
-from Desim.memory.Memory import DepMemory, DepMemoryPort, ChunkMemoryPort, ChunkMemory
+from Desim.memory.Memory import DepMemory, DepMemoryPort, ChunkMemoryPort, ChunkMemory, ChunkPacket
 from Desim.module.FIFO import FIFO,DelayFIFO
 from Desim.module.Pipeline import PipeGraph
 
@@ -20,8 +22,10 @@ class SendEngineConfig:
 
 
 class SubSendEngine(SimModule):
-    def __init__(self,sub_send_engine_id:int):
+    def __init__(self,sub_send_engine_id:int,d2d_link_config:LinkConfig):
         super().__init__()
+
+        self.d2d_link_config = d2d_link_config
 
         self.register_coroutine(self.process)
 
@@ -32,7 +36,6 @@ class SubSendEngine(SimModule):
 
         self.l3_memory_read_port:ChunkMemoryPort = ChunkMemoryPort()
 
-        self.link_config:LinkConfig = LinkConfig()
 
         self.sub_send_engine_id = sub_send_engine_id
         
@@ -59,13 +62,21 @@ class SubSendEngine(SimModule):
                                                  self.current_command.chunk_size,self.current_command.batch_size,
                                                  element_bytes_dict[self.current_command.dtype])
 
+            # 构建为 chunk packet
+            chunk_packet = ChunkPacket(
+                data,
+                self.current_command.chunk_size,
+                self.current_command.batch_size,
+                element_bytes_dict[self.current_command.dtype]
+            )
+
             # 写入到 DelayFIFO 中, 模拟UCI-E 的延迟行为
             # 名字就叫uci-e吧
             # 向多个fifo中写入, 需要支持
 
             # 计算一下传输的延迟, 邻接的下一个fifo是 DelayFIFO, 需要在这里仿真出来uci-e的传输开销
             for atom_id in self.current_command.group_id:
-                output_fifo_map[f'l3-uci-e-{atom_id}'].delay_write(data,SimTime(200))
+                output_fifo_map[f'l3-uci-e-{atom_id}'].delay_write(chunk_packet,SimTime(self.d2d_link_config.link_latency))
 
 
 
@@ -77,11 +88,11 @@ class SubSendEngine(SimModule):
         input_fifo = list(input_fifo_map.values())[0]
         output_fifo = list(output_fifo_map.values())[0]
 
-        latency = (self.current_command.chunk_size * self.current_command.batch_size * element_bytes_dict[self.current_command.dtype])// self.link_config.bandwidth
         for i in range(self.current_command.chunk_num):
-            data = input_fifo.read()
+            chunk_packet:ChunkPacket = input_fifo.read()
+            latency = math.ceil(chunk_packet.chunk_bytes / self.d2d_link_config.bandwidth)
             SimModule.wait_time(SimTime(latency))
-            output_fifo.write(data)
+            output_fifo.write(chunk_packet)
 
         return False
 
@@ -95,8 +106,9 @@ class SubSendEngine(SimModule):
 
             write_addr = self.current_command.dst
             for i in range(self.current_command.chunk_num):
-                data = input_fifo_map[f'uci-e-{atom_id}-l2-{atom_id}'].read()
+                chunk_packet:ChunkPacket = input_fifo_map[f'uci-e-{atom_id}-l2-{atom_id}'].read()
 
+                data = chunk_packet.payload
                 # 写入到 l2 memory 中
                 l2_write_port.write(write_addr+i,data,True,
                                     self.current_command.chunk_size,
@@ -181,8 +193,10 @@ class SendEngine(SimModule):
 
     """
 
-    def __init__(self):
+    def __init__(self,d2d_link_config:LinkConfig):
         super().__init__()
+
+        self.d2d_link_config = d2d_link_config
 
         self.send_command_queue:Optional[FIFO] = None
 
@@ -194,7 +208,7 @@ class SendEngine(SimModule):
         self.sub_send_engine_list:list[SubSendEngine] = []
         for i in range(self.send_engine_config.num_sub_engine):
             self.sub_send_engine_list.append(
-                SubSendEngine(i)
+                SubSendEngine(i,d2d_link_config)
             )
 
     def config_connection(self,atom_manager:AtomManager,l3_memory:ChunkMemory):
