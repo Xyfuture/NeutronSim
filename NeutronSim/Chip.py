@@ -25,9 +25,9 @@ class Chip(SimModule):
         self.l3_memory = ChunkMemory(self.l3_memory_config.bandwidth)
         self.reduce_memory = ChunkMemory(self.reduce_memory_config.bandwidth)
 
-        self.atom_manager:AtomManager = AtomManager(self.d2d_link_config,self.l2_memory_config,atom_config)
-        self.send_engine = SendEngine(self.d2d_link_config)
-        self.receive_engine = ReceiveEngine()
+        self.atom_manager:AtomManager = AtomManager(self,self.d2d_link_config,self.l2_memory_config,atom_config)
+        self.send_engine = SendEngine(self,self.d2d_link_config)
+        self.receive_engine = ReceiveEngine(self)
 
 
         self.atom_manager.config_connection(self.reduce_memory)

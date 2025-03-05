@@ -188,7 +188,6 @@ if __name__ == '__main__':
     SimSession.scheduler.run()
 
 
-    print(chip.atom_manager.atom_instance_dict[0].atom_die.l2_memory.memory_tag)
     print(f'reduce memory tag -> {chip.reduce_memory.memory_tag}')
     print(f'l3 memory tag -> {chip.l3_memory.memory_tag}')
 

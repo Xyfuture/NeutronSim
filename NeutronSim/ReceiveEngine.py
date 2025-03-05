@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Optional, Literal, TypeAlias
+from typing import Optional, Literal, TypeAlias, TYPE_CHECKING
 
 from Desim.Core import SimModule, SimTime
 from Desim.module.FIFO import FIFO
@@ -8,13 +8,15 @@ from Desim.module.FIFO import FIFO
 from NeutronSim.Commands import ReceiveCommand, ReceiveBaseCommand, QuantCommand
 from Desim.module.Pipeline import PipeGraph, PipeStage
 
-from Desim.memory.Memory import DepMemory, DepMemoryPort, ChunkMemory, ChunkPacket
+from Desim.memory.Memory import ChunkMemory, ChunkPacket
 
 from NeutronSim.Config import element_bytes_dict
 from Desim.memory.Memory import ChunkMemoryPort
 
-PipeArg:TypeAlias = Optional[dict[str,FIFO]]
+if TYPE_CHECKING:
+    from NeutronSim.Chip import Chip
 
+PipeArg:TypeAlias = Optional[dict[str,FIFO]]
 
 
 @dataclass
@@ -25,12 +27,12 @@ class ReceiveEngineConfig:
 
 
 
-
-
 class ReceiveEngine(SimModule):
-    def __init__(self):
+
+    def __init__(self,top_module):
         super().__init__()
 
+        self.top_module = top_module
 
         self.recv_command_queue:Optional[FIFO] = None
 
@@ -208,9 +210,6 @@ class ReceiveEngine(SimModule):
                     self.current_command.batch_size,
                     2
                 )
-
-                print('read here')
-
 
                 # 根据指令的情况，向后面的部件转发数据
                 # TODO 暂时简单操作， 直接向所有的 fifo 发送， 看看会不会有问题

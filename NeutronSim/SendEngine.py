@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from Desim.module.Pipeline import PipeStage
 
@@ -14,7 +14,8 @@ from Desim.memory.Memory import DepMemory, DepMemoryPort, ChunkMemoryPort, Chunk
 from Desim.module.FIFO import FIFO,DelayFIFO
 from Desim.module.Pipeline import PipeGraph
 
-
+if TYPE_CHECKING:
+    from NeutronSim.Chip import Chip
 
 @dataclass
 class SendEngineConfig:
@@ -22,8 +23,10 @@ class SendEngineConfig:
 
 
 class SubSendEngine(SimModule):
-    def __init__(self,sub_send_engine_id:int,d2d_link_config:LinkConfig):
+    def __init__(self,top_module:SendEngine,sub_send_engine_id:int,d2d_link_config:LinkConfig):
         super().__init__()
+
+        self.top_module = top_module
 
         self.d2d_link_config = d2d_link_config
 
@@ -193,8 +196,10 @@ class SendEngine(SimModule):
 
     """
 
-    def __init__(self,d2d_link_config:LinkConfig):
+    def __init__(self,top_module:Chip,d2d_link_config:LinkConfig):
         super().__init__()
+
+        self.top_module = top_module
 
         self.d2d_link_config = d2d_link_config
 
@@ -208,7 +213,7 @@ class SendEngine(SimModule):
         self.sub_send_engine_list:list[SubSendEngine] = []
         for i in range(self.send_engine_config.num_sub_engine):
             self.sub_send_engine_list.append(
-                SubSendEngine(i,d2d_link_config)
+                SubSendEngine(self,i,d2d_link_config)
             )
 
     def config_connection(self,atom_manager:AtomManager,l3_memory:ChunkMemory):

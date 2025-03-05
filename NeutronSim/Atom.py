@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from typing import TYPE_CHECKING
 import math
 from collections import deque
 from dataclasses import dataclass,field
@@ -17,16 +17,23 @@ from Desim.memory.Memory import ChunkMemory
 from Desim.module.FIFO import FIFO,DelayFIFO
 
 
+if TYPE_CHECKING:
+    from NeutronSim.Chip import Chip
+
+
 class AtomInstance(SimModule):
-    def __init__(self,atom_id:int = -1,
+    def __init__(self,top_module:AtomManager,
+                 atom_id:int = -1,
                  d2d_link_config:LinkConfig=LinkConfig(),
                  l2_memory_config:MemoryConfig = MemoryConfig(),
                  atom_config:AtomConfig = AtomConfig()):
         super().__init__()
 
+        self.top_module = top_module
+
         self.atom_id:int = atom_id
 
-        self.atom_die:Optional[AtomDie] = AtomDie(atom_id,
+        self.atom_die:Optional[AtomDie] = AtomDie(self,atom_id,
                                                   d2d_link_config,
                                                   l2_memory_config,
                                                   atom_config)
@@ -69,10 +76,14 @@ class AtomResourceRequest:
 
 
 class AtomManager(SimModule):
-    def __init__(self,d2d_link_config:LinkConfig,
+
+    def __init__(self, top_module:Chip,
+                 d2d_link_config:LinkConfig,
                  l2_memory_config:MemoryConfig,
                  atom_config:AtomConfig):
         super().__init__()
+
+        self.top_module = top_module
 
         self.d2d_link_config = d2d_link_config
         self.l2_memory_config = l2_memory_config
@@ -87,7 +98,7 @@ class AtomManager(SimModule):
 
         self.atom_instance_dict:dict[int,AtomInstance]=dict()
         for i in range(8):
-            self.atom_instance_dict[i] = AtomInstance(i,d2d_link_config,l2_memory_config,atom_config)
+            self.atom_instance_dict[i] = AtomInstance(self, i,d2d_link_config,l2_memory_config,atom_config)
 
         self.update_event = Event()
 
@@ -184,11 +195,14 @@ class AtomManager(SimModule):
 
 
 class AtomDie(SimModule):
-    def __init__(self,atom_id:int=-1,
+    def __init__(self,top_module:AtomInstance,
+                    atom_id:int=-1,
                     d2d_link_config:LinkConfig=LinkConfig(),
                     l2_memory_config:MemoryConfig=MemoryConfig(),
                     atom_config:AtomConfig=AtomConfig()):
         super().__init__()
+
+        self.top_module = top_module
 
         self.atom_id = atom_id
 
@@ -290,10 +304,8 @@ class AtomDie(SimModule):
                         element_bytes = 4
                     )
 
-                    print(f'atom id {self.atom_id} before write at time {SimSession.sim_time}')
                     l2_memory_write_port.write(current_command.dst+i,chunk_packet,True,
                                                current_command.dst_chunk_size,current_command.batch_size,4)
-                    print(f'atom id {self.atom_id} after write at time {SimSession.sim_time}')
 
 
     def store_engine_read_handler(self):
