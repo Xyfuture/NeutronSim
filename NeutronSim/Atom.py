@@ -269,7 +269,7 @@ class AtomDie(SimModule):
                     pass #  src_chunk_size * dst_chunk_size 的一个小块
 
                     # 等待某一个延迟的时间
-                    assert current_command.batch_size < self.atom_config.max_batch_size
+                    assert current_command.batch_size <= self.atom_config.max_batch_size
 
                     ops = current_command.src_chunk_size * current_command.dst_chunk_size
 

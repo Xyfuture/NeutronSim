@@ -168,7 +168,7 @@ if __name__ == '__main__':
 
     atom_config = AtomConfig()
 
-    chip = Chip(d2d_link_config,l2_memory_config,l3_memory_config,reduce_memory_config)
+    chip = Chip(d2d_link_config,l2_memory_config,l3_memory_config,reduce_memory_config,atom_config)
 
     chip.load_command(
         send_command_list=gen_send_command_list(),
