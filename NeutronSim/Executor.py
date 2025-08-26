@@ -117,7 +117,7 @@ class ReceiveExecutor(ExecutorBase):
             for cur_consumer_command,fifo in self.command.output_nodes.items():
                 fifo.write(i)
 
-        print(f"ReceiveExecutor Finish at {SimSession.sim_time}")
+        print(f"Finish at {SimSession.sim_time}")
 
         self.iod_resource.recv_engine_free_tag.post()
 
