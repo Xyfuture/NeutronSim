@@ -1,9 +1,9 @@
 from Desim.Core import SimSession
 from Desim.module.FIFO import FIFO
-from zmq.backend import first
 
 from NeutronSim.Commands import SendCommand, ComputeCommand, ReceiveCommand, RootCommand, CommandGraph, MemoryShape
 from NeutronSim.Executor import GraphExecuteEngine
+from NeutronSim.utils.tracer import PerfettoTracer
 
 
 
@@ -63,13 +63,17 @@ graph.root_command = root_command
 graph.build_graph()
 
 
-graph_executor = GraphExecuteEngine(graph)
+tracer = PerfettoTracer(ns_per_cycle=1000)
+
+
+graph_executor = GraphExecuteEngine(graph,tracer)
 
 GraphExecuteEngine.current_graph_engine = graph_executor
 
 
 SimSession.scheduler.run()
 
+tracer.save("./trace.json")
 
 print(f"Simulation Finished {SimSession.sim_time}")
 

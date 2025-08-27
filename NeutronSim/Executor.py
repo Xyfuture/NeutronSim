@@ -6,6 +6,7 @@ from Desim.module.FIFO import FIFO
 
 from NeutronSim.Commands import SendCommand, ComputeCommand, CommandGraph, ReceiveCommand, RootCommand, CommandBase
 from NeutronSim.Resource import IODieResource, AtomDieResource
+from NeutronSim.utils.tracer import PerfettoTracer
 
 
 class ExecutorBase(SimModule):
@@ -29,7 +30,7 @@ class SendExecutor(ExecutorBase):
     def process(self):
 
         # 申请资源
-        self.iod_resource.dma_free_tag.wait()
+        dma_id = self.iod_resource.acquire_dma()
         for group_id in self.command.group_id:
             self.atom_resource.iod_to_atom_link_free_table[group_id].wait()
 
@@ -40,16 +41,24 @@ class SendExecutor(ExecutorBase):
         # 开始执行
 
         for i in range(self.command.dshape.num_chunks):
+            self.iod_resource.tracer.start_event(f'dma-{dma_id}', f'send-{i}', SimSession.sim_time.cycle)
+            for group_id in self.command.group_id:
+                self.atom_resource.tracer.start_event(f'iod-to-atom-link-{group_id}', f'send-{i}', SimSession.sim_time.cycle)
+            
             SimModule.wait_time(SimTime(20))
             for cur_consumer_command,fifo in self.command.output_nodes.items():
                 fifo.write(i)
-
+            
+            self.iod_resource.tracer.end_event(f'dma-{dma_id}', SimSession.sim_time.cycle, f'send-{i}')
+            for group_id in self.command.group_id:
+                self.atom_resource.tracer.end_event(f'iod-to-atom-link-{group_id}',  SimSession.sim_time.cycle,f'send-{i}',)
 
 
         # 执行结束，释放硬件资源
         for group_id in self.command.group_id:
             self.atom_resource.iod_to_atom_link_free_table[group_id].post()
-        self.iod_resource.dma_free_tag.post()
+        
+        self.iod_resource.release_dma(dma_id)
 
 
 class ComputeExecutor(ExecutorBase):
@@ -76,8 +85,18 @@ class ComputeExecutor(ExecutorBase):
 
         # TODO 完成复杂的部分
         for i in range(self.command.src_dshape.num_chunks):
+            for input_command,fifo in self.command.input_nodes.items():
+                fifo.read()
+            # 计算
             for j in range(self.command.dst_dshape.num_chunks):
+                
+                for group_id in self.command.group_id:
+                    self.atomd_resource.tracer.start_event(f'atom-die-{group_id}', f'compute-{(i,j)}', SimSession.sim_time.cycle)
+                
                 SimModule.wait_time(SimTime(20))
+
+                for group_id in self.command.group_id:
+                    self.atomd_resource.tracer.end_event(f'atom-die-{group_id}', SimSession.sim_time.cycle, f'compute-{(i,j)}')
 
                 print(f'Compute run {(i,j)} at {SimSession.sim_time}')
 
@@ -113,9 +132,14 @@ class ReceiveExecutor(ExecutorBase):
         GraphExecuteEngine.current_graph_engine.upcoming_command_fifo.write(self.command)
 
         for i in range(self.command.dshape.num_chunks):
+            for input_command,fifo in self.command.input_nodes.items():
+                fifo.read()
+
+            self.iod_resource.tracer.start_event('recv-engine', f'receive-{i}', SimSession.sim_time.cycle)
             SimModule.wait_time(SimTime(20))
             for cur_consumer_command,fifo in self.command.output_nodes.items():
                 fifo.write(i)
+            self.iod_resource.tracer.end_event('recv-engine', SimSession.sim_time.cycle, f'receive-{i}')
 
         print(f"Finish at {SimSession.sim_time}")
 
@@ -125,14 +149,14 @@ class ReceiveExecutor(ExecutorBase):
 
 class GraphExecuteEngine(SimModule):
     current_graph_engine:Optional[GraphExecuteEngine] = None
-    def __init__(self,graph:CommandGraph):
+    def __init__(self,graph:CommandGraph,tracer:PerfettoTracer):
         super().__init__()
 
         self.graph:CommandGraph = graph
 
 
-        self.iod_resource = IODieResource()
-        self.atomd_resource = AtomDieResource()
+        self.iod_resource = IODieResource(tracer)
+        self.atomd_resource = AtomDieResource(tracer)
 
 
 
